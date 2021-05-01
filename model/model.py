@@ -23,9 +23,9 @@ class DocReader(object):
         self.use_cuda = False
         # Building network. If normalize if false, scores are not normalized
         # 0-1 per paragraph (no softmax).
-        if args.model_type == 'pqtanet':
+        if args.model_type.lower() == 'pqtanet':
             self.network = PQTANet(args)
-        elif args.model_type == 'rnet':
+        elif args.model_type.lower() == 'rnet':
             self.network = RNet(args)
         else:
             raise RuntimeError('Unsupported model: %s' % args.model_type)
@@ -102,6 +102,7 @@ class DocReader(object):
         self.network.train()
         # Transfer to GPU
         # ex : x,x_c,x_f,x_mask,targets
+        docs_c,docs_w,tite_c,tite_w,ques_c,ques_w,y_s,y_e = batch
         input_ids, segment_ids, start_positions, end_positions, answerable_label = batch
         # Run forward
         logits = self.network(input_ids=input_ids, token_type_ids=segment_ids)
