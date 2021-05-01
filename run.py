@@ -1,4 +1,5 @@
 import json
+import time
 import os
 import random
 import logging
@@ -8,6 +9,7 @@ import paddle.io
 from paddlenlp.embeddings import TokenEmbedding
 from config import override_model_args,parse_args,set_default_args
 from data import process_data,batchify,DuReaderDataset
+from model import DocReader
 
 logger = logging.getLogger()
 def set_seeds(args):
@@ -60,6 +62,30 @@ def set_log(args):
         model.init_lr_scheduler(args, num_training_steps)
         model.init_optimizer(args)
         model.init_loss(args)
+
+        # Training process
+        global_step = 0
+        tic_train = time.time()
+        for epoch in range(args.num_train_epochs):
+            for step, batch in enumerate(train_data_loader):
+                global_step += 1
+                loss = model.update(batch)
+                if global_step % args.logging_steps == 0:
+                    logger.info("global step %d, epoch: %d, batch: %d, loss: %f, speed: %.2f step/s"
+                                % (global_step, epoch, step, loss, args.logging_steps / (time.time() - tic_train)))
+                    tic_train = time.time()
+
+                if global_step % args.save_steps == 0 or global_step == num_training_steps:
+                    if paddle.distributed.get_rank() == 0:
+                        output_dir = os.path.join(args.output_dir, "model_%d" % global_step)
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir)
+                        # need better way to get inner model of DataParallel
+                        model_file = os.path.join(output_dir + '.ckpt')
+                        model.save(model_file)
+        model_file = os.path.join(args.output_dir, args.model_name + "-global.ckpt")
+        model.save(model_file)
+
     if args.do_predict:
         # preparing test datasets
         pass
