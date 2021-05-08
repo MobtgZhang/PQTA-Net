@@ -6,7 +6,7 @@ from paddlenlp.transformers import LinearDecayWithWarmup
 logger = logging.getLogger()
 from .ptqnet import PQTANet
 from .rnet import RNet
-from .loss import CrossEntropyLossForChecklist
+from .loss import CrossEntropyLoss,CrossEntropyLossWithOutCls
 from config.args import override_model_args
 
 class DocReader(object):
@@ -35,7 +35,15 @@ class DocReader(object):
             # Load buffer separately
             self.network.load_state_dict(state_dict)
     def init_loss(self,args):
-        self.criterion = CrossEntropyLossForChecklist()
+        if args.model_type.lower()=='rnet':
+            self.criterion = CrossEntropyLossWithOutCls()
+        elif args.model_type.lower()=='mreader':
+            self.criterion = CrossEntropyLossWithOutCls()
+        elif args.model_type.lower()=='bert':
+            pass
+        else:
+            raise TypeError("Unkonwn Type :%s"%args.model_type.lower())
+
     def init_lr_scheduler(self,args,num_training_steps):
         self.lr_scheduler = LinearDecayWithWarmup(
             args.learning_rate, num_training_steps, args.warmup_proportion)
@@ -102,13 +110,19 @@ class DocReader(object):
         self.network.train()
         # Transfer to GPU
         # ex : x,x_c,x_f,x_mask,targets
-        docs_c,docs_w,tite_c,tite_w,ques_c,ques_w,y_s,y_e = batch
-        input_ids, segment_ids, start_positions, end_positions, answerable_label = batch
+        docs_c,docs_w,tite_c,tite_w,ques_c,ques_w,y_s,y_e,is_impossible = batch
+        # print(docs_c.shape,docs_w.shape)
+        # print(tite_w.shape,tite_c.shape)
+        # print(ques_w.shape,ques_c.shape)
+        # print(y_s.shape)
+        # print(y_e.shape)
         # Run forward
-        logits = self.network(input_ids=input_ids, token_type_ids=segment_ids)
-
+        s_logits,e_logits,cls_logits = self.network(docs_c,docs_w,tite_c,tite_w,ques_c,ques_w)
+        predict = (s_logits,e_logits,cls_logits)
+        target = (y_s,y_e,is_impossible)
         # Compute loss and accuracies
-        loss = self.criterion(logits, (start_positions, end_positions,answerable_label))
+        loss = self.criterion(predict,target)
+
         np_loss = loss.numpy()
         # Clear gradients and run backward
         loss.backward()
