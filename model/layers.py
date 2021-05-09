@@ -358,3 +358,10 @@ class MemoryAnsPointer(nn.Layer):
             p_e = e.exp()
         return p_s, p_e,z_s
 #------------------------End M-Reader---------------
+#------------------------End PQTA-Net---------------
+class AggrateBiRNN(nn.Layer):
+    def __init__(self):
+        super(AggrateBiRNN, self).__init__()
+    def forward(self,puts_emb):
+        pass
+#------------------------End PQTA-Net---------------

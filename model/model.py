@@ -42,6 +42,8 @@ class DocReader(object):
             self.criterion = CrossEntropyLossWithOutCls()
         elif args.model_type.lower()=='mreader':
             self.criterion = CrossEntropyLossWithOutCls()
+        elif args.model_type.lower()=='pqtanet':
+            self.criterion = CrossEntropyLossWithOutCls()
         elif args.model_type.lower()=='bert':
             pass
         else:
