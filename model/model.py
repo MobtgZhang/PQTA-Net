@@ -6,6 +6,7 @@ from paddlenlp.transformers import LinearDecayWithWarmup
 logger = logging.getLogger()
 from .ptqnet import PQTANet
 from .rnet import RNet
+from .mreader import MReader
 from .loss import CrossEntropyLoss,CrossEntropyLossWithOutCls
 from config.args import override_model_args
 
@@ -27,6 +28,8 @@ class DocReader(object):
             self.network = PQTANet(args)
         elif args.model_type.lower() == 'rnet':
             self.network = RNet(args)
+        elif args.model_type.lower() == 'mreader':
+            self.network = MReader(args)
         else:
             raise RuntimeError('Unsupported model: %s' % args.model_type)
 

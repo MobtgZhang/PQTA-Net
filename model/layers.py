@@ -36,7 +36,7 @@ class SelfAttnMatch(nn.Layer):
         # Compute scores
         scores = x_proj.bmm(paddle.transpose(x_proj,perm=[0,2,1]))
         if not self.diag:
-            x_len = x.size(1)
+            x_len = x.shape[1]
             for i in range(x_len):
                 scores[:, i, i] = 0
         # Normalize with softmax
@@ -67,7 +67,7 @@ class SeqAttnMatch(nn.Layer):
             self.linear = nn.Linear(input_size, input_size,weight_attr=weight_attr,bias_attr=bias_attr)
         else:
             self.linear = None
-    def forward(self, x, y):
+    def forward(self,x,y):
         """
         Args:
             x: batch * len1 * hdim
@@ -167,6 +167,9 @@ class FeedForwardNetwork(nn.Layer):
     def __init__(self, input_size, hidden_size, output_size, dropout_rate=0.2):
         super(FeedForwardNetwork, self).__init__()
         self.dropout_rate = dropout_rate
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size =output_size
         weight_attr1 = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
         bias_attr1 = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
         weight_attr2 = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
@@ -292,8 +295,12 @@ class SFU(nn.Layer):
     """
     def __init__(self, input_size, fusion_size):
         super(SFU, self).__init__()
-        self.linear_r = nn.Linear(input_size + fusion_size, input_size)
-        self.linear_g = nn.Linear(input_size + fusion_size, input_size)
+        weight_attr_r = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
+        bias_attr_r = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
+        weight_attr_g = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
+        bias_attr_g = paddle.framework.ParamAttr(initializer=nn.initializer.XavierNormal())
+        self.linear_r = nn.Linear(input_size + fusion_size, input_size,weight_attr=weight_attr_r,bias_attr=bias_attr_r)
+        self.linear_g = nn.Linear(input_size + fusion_size, input_size,weight_attr=weight_attr_g,bias_attr=bias_attr_g)
 
     def forward(self, x, fusions):
         r_f = paddle.concat([x, fusions], axis=2)
@@ -303,40 +310,37 @@ class SFU(nn.Layer):
         return o
 
 class MemoryAnsPointer(nn.Layer):
-    def __init__(self, x_size, y_size, hidden_size, hop=1, dropout_rate=0, normalize=True):
+    def __init__(self, x_size, y_size,hidden_size, hop=1, dropout_rate=0, normalize=True):
         super(MemoryAnsPointer, self).__init__()
         self.normalize = normalize
         self.hidden_size = hidden_size
         self.hop = hop
+        self.x_size = x_size
+        self.y_size = y_size
         self.dropout_rate = dropout_rate
+        self.ques_encoder = nn.GRU(input_size=y_size,hidden_size=x_size,num_layers=1,
+                                   direction='forward',time_major=False)
         self.FFNs_start = nn.LayerList()
         self.SFUs_start = nn.LayerList()
         self.FFNs_end = nn.LayerList()
         self.SFUs_end = nn.LayerList()
         for i in range(self.hop):
-            self.FFNs_start.append(FeedForwardNetwork(x_size + y_size + 2 * hidden_size, hidden_size, 1, dropout_rate))
-            self.SFUs_start.append(SFU(y_size, 2 * hidden_size))
-            self.FFNs_end.append(FeedForwardNetwork(x_size + y_size + 2 * hidden_size, hidden_size, 1, dropout_rate))
-            self.SFUs_end.append(SFU(y_size, 2 * hidden_size))
+            self.FFNs_start.append(FeedForwardNetwork(3*x_size, hidden_size, 1, dropout_rate))
+            self.SFUs_start.append(SFU(x_size, x_size))
+            self.FFNs_end.append(FeedForwardNetwork(3*x_size, hidden_size, 1, dropout_rate))
+            self.SFUs_end.append(SFU(x_size, x_size))
 
-    def forward(self, x, y, x_mask, y_mask):
-        z_s = y[:, -1, :].unsqueeze(1)  # [B, 1, I]
-        z_e = None
-        s = None
-        e = None
-        p_s = None
-        p_e = None
-
+    def forward(self, x, y):
+        _,z_s = self.ques_encoder(y)
+        z_s = paddle.fluid.layers.transpose(z_s, perm=[1, 0, 2]) # [B,1,I]
         for i in range(self.hop):
-            z_s_ = z_s.repeat(1, x.size(1), 1)  # [B, S, I]
-            s = self.FFNs_start[i](paddle.concat([x, z_s_, x * z_s_], 2)).squeeze(2)
-            s.data.masked_fill_(x_mask.data, -float('inf'))
+            z_s_ = paddle.fluid.layers.expand(z_s,expand_times=[1, x.shape[1], 1])  # [B, S, I]
+            s = self.FFNs_start[i](paddle.concat([x, z_s_, x * z_s_], axis=2)).squeeze(2)
             p_s = F.softmax(s, axis=1)  # [B, S]
             u_s = p_s.unsqueeze(1).bmm(x)  # [B, 1, I]
             z_e = self.SFUs_start[i](z_s, u_s)  # [B, 1, I]
-            z_e_ = z_e.repeat(1, x.size(1), 1)  # [B, S, I]
-            e = self.FFNs_end[i](paddle.concat([x, z_e_, x * z_e_], 2)).squeeze(2)
-            e.data.masked_fill_(x_mask.data, -float('inf'))
+            z_s_ = paddle.fluid.layers.expand(z_s,expand_times=[1, x.shape[1], 1])  # [B, S, I]
+            e = self.FFNs_end[i](paddle.concat([x, z_s_, x * z_s_], axis=2)).squeeze(2)
             p_e = F.softmax(e, axis=1)  # [B, S]
             u_e = p_e.unsqueeze(1).bmm(x)  # [B, 1, I]
             z_s = self.SFUs_end[i](z_e, u_e)
@@ -352,5 +356,5 @@ class MemoryAnsPointer(nn.Layer):
         else:
             p_s = s.exp()
             p_e = e.exp()
-        return p_s, p_e
+        return p_s, p_e,z_s
 #------------------------End M-Reader---------------

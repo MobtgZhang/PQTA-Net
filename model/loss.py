@@ -21,17 +21,14 @@ class CrossEntropyLoss(nn.Layer):
         mrc_loss = (start_loss + end_loss) / 2
         loss = (mrc_loss + cls_loss) /2
         return loss
-import paddle
-import paddle.nn as nn
 class CrossEntropyLossWithOutCls(nn.Layer):
     def __init__(self):
         super(CrossEntropyLossWithOutCls, self).__init__()
     def forward(self, predict,target):
         start_logits, end_logits,_ = predict
-        start_position, end_position, answerable_label = target
+        start_position, end_position, _ = target
         start_position = paddle.unsqueeze(start_position, axis=-1)
         end_position = paddle.unsqueeze(end_position, axis=-1)
-        answerable_label = paddle.unsqueeze(answerable_label, axis=-1)
         start_loss = paddle.nn.functional.softmax_with_cross_entropy(
             logits=start_logits, label=start_position, soft_label=False)
         start_loss = paddle.mean(start_loss)
