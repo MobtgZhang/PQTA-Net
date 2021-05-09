@@ -1,4 +1,5 @@
-paddlepaddle_gpu==2.0.1.post101
 numpy==1.20.1
+paddlepaddle_gpu==2.0.1.post101
+tqdm==4.60.0
 paddlenlp==2.0.0rc18
 paddle==1.0.2

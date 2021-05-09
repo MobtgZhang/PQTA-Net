@@ -20,9 +20,12 @@ First,download the Erine Pretrained Language Model.
 ```bash
 bash download.sh
 ```
-Second,train the model for the Net.
+Second,train the model for the MReader and RNet.
 ```bash
-bash train.sh
+bash train_mreader.sh
+```
+```bash
+bash train_rnet.sh
 ```
 Third,predict the test dataset.
 ```bash
